@@ -1,8 +1,18 @@
 (ns feedreader.core
   (:require [clojure.xml :as xml]
             [clojure.java.io :as io])
-  (:import (java.io File))
+  (:import (java.net.http HttpClient HttpRequest HttpResponse$BodyHandlers)
+           (java.net URI))
   (:gen-class))
+
+(defn fetch-url
+  [url]
+  (let [client (HttpClient/newHttpClient)
+        request (.build (.uri (HttpRequest/newBuilder) (URI/create url)))
+        body (HttpResponse$BodyHandlers/ofString)
+        response (.send client request body)]
+    (.body response))
+  )
 
 (defn parse-feed
   [data]
