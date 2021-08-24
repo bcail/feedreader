@@ -24,6 +24,11 @@
       }
     )))
 
+(defn filter-items
+  [items pattern]
+  (for [i items :when (re-seq pattern (.toLowerCase (i :title)))]
+    i))
+
 (defn -main
   "Feed Reader"
   [& args]
