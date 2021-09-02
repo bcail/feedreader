@@ -2,7 +2,8 @@
   :description "Feed Reader"
   :url "http://example.com/FIXME"
   :license {:name "MIT"}
-  :dependencies [[org.clojure/clojure "1.10.3"]]
+  :dependencies [[org.clojure/clojure "1.10.3"]
+                 [org.xerial/sqlite-jdbc  "3.36.0.3"]]
   :main ^:skip-aot feedreader.core
   :target-path "target/%s"
   :profiles {:uberjar {:aot :all}})
