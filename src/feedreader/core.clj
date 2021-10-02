@@ -7,10 +7,23 @@
            (java.util.regex Pattern))
   (:gen-class))
 
-(defn load-feeds
+(defn get-db-conn
   [db-name]
-  (let [connection (DriverManager/getConnection (str "jdbc:sqlite:" db-name))
-        statement (.createStatement connection)
+  (DriverManager/getConnection (str "jdbc:sqlite:" db-name)))
+
+(defn create-tables
+  [db-conn]
+  (let [statement (.createStatement db-conn)]
+    (.executeUpdate statement "CREATE TABLE feeds (id INTEGER PRIMARY KEY, url TEXT, filter TEXT)")))
+
+(defn insert-feed-into-db
+  [db-conn feed]
+  (let [statement (.createStatement db-conn)]
+    (.executeUpdate statement (str "INSERT INTO feeds (url, filter) VALUES (\"" (feed :url) "\", \"" (get feed :filter "") "\")"))))
+
+(defn load-feeds
+  [db-conn]
+  (let [statement (.createStatement db-conn) ;should be PreparedStatement
         results (.executeQuery statement "SELECT * FROM feeds")]
     (loop [feeds []]
       (if (not (.next results))
@@ -49,13 +62,17 @@
     (for [i (filter-items (parse-feed (fetch-url (feed :url))) (feed :filter))]
       (println (str (i :title) "\n  (" (i :link) ")")))))
 
+(defn run
+  [db-conn]
+  (dorun
+    (for [feed (load-feeds db-conn)]
+      (do
+        (println (feed :url))
+        (process-feed feed)))))
+
 (defn -main
   "Feed Reader"
   [& args]
   (println "Welcome to Feed Reader")
   (let [db-name "feedreader.db"]
-    (dorun
-      (for [feed (load-feeds db-name)]
-        (do
-          (println (feed :url))
-          (process-feed feed))))))
+    (run (get-db-conn db-name))))

@@ -1,6 +1,7 @@
 (ns feedreader.core-test
   (:require [clojure.test :refer :all]
-            [feedreader.core :refer :all]))
+            [feedreader.core :refer :all])
+  (:import (java.sql DriverManager)))
 
 (def data "<rss version=\"2.0\"><channel><title>Website</title><link>https://localhost</link><description>Description</description><item><title>Item 1 title</title><link>https://localhost/item1</link><pubDate>Fri, 18 Jun 2021 20:38:40 +0000</pubDate><comments>https://localhost/item1/comments</comments></item><item><title>Item 2 title</title><link>https://localhost/item2</link><pubDate>Fri, 25 Jun 2021 20:38:40 +0000</pubDate><comments>https://localhost/item2/comments</comments></item></channel></rss>")
 
@@ -16,3 +17,14 @@
     (let [parsed (parse-feed data)
           filtered (filter-items parsed #"item 1")]
       (is (= (count filtered) 1)))))
+
+(deftest test-db-feed
+  (testing "insert and read feed from db"
+    (let [db-conn (get-db-conn ":memory:")
+          feed {:url "https://localhost/feed1"}
+          feed-id 1
+          entry {:title "title 1" :link "https://localhost/item1"}]
+      (create-tables db-conn)
+      (insert-feed-into-db db-conn feed)
+      (let [feeds (load-feeds db-conn)]
+        (is (= ((first feeds) :url) "https://localhost/feed1"))))))
