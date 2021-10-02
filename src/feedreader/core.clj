@@ -14,12 +14,18 @@
 (defn create-tables
   [db-conn]
   (let [statement (.createStatement db-conn)]
-    (.executeUpdate statement "CREATE TABLE feeds (id INTEGER PRIMARY KEY, url TEXT, filter TEXT)")))
+    (.executeUpdate statement "CREATE TABLE feeds (id INTEGER PRIMARY KEY, url TEXT, filter TEXT)")
+    (.executeUpdate statement "CREATE TABLE entries (id INTEGER PRIMARY KEY, feedid INTEGER, title TEXT, link TEXT)")))
 
 (defn insert-feed-into-db
   [db-conn feed]
   (let [statement (.createStatement db-conn)]
     (.executeUpdate statement (str "INSERT INTO feeds (url, filter) VALUES (\"" (feed :url) "\", \"" (get feed :filter "") "\")"))))
+
+(defn insert-entry-into-db
+  [db-conn feed-id entry]
+  (let [statement (.createStatement db-conn)]
+    (.executeUpdate statement (str "INSERT INTO entries (feedid, title, link) VALUES (" feed-id ", \"" (get entry :title "") "\", \"" (entry :link) "\")"))))
 
 (defn load-feeds
   [db-conn]
@@ -31,6 +37,17 @@
         (recur (conj feeds
                     {:url (.getString results "url")
                      :filter (Pattern/compile (.getString results "filter"))}))))))
+
+(defn load-entries-for-feed
+  [db-conn feed-id]
+  (let [statement (.createStatement db-conn)
+        results (.executeQuery statement (str "SELECT * FROM entries WHERE feedid = " feed-id))]
+    (loop [entries []]
+      (if (not (.next results))
+        entries
+        (recur (conj entries
+                     {:title (.getString results "title")
+                      :link (.getString results "link")}))))))
 
 (defn fetch-url
   [url]

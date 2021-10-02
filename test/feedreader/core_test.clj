@@ -22,9 +22,19 @@
   (testing "insert and read feed from db"
     (let [db-conn (get-db-conn ":memory:")
           feed {:url "https://localhost/feed1"}
-          feed-id 1
-          entry {:title "title 1" :link "https://localhost/item1"}]
+          feed-id 1]
       (create-tables db-conn)
       (insert-feed-into-db db-conn feed)
       (let [feeds (load-feeds db-conn)]
         (is (= ((first feeds) :url) "https://localhost/feed1"))))))
+
+(deftest test-db-entry
+  (testing "insert and read entry from db"
+    (let [db-conn (get-db-conn ":memory:")
+          feed {:url "https://localhost/feed1"}
+          feed-id 1
+          entry {:title "title 1" :link "https://localhost/item1"}]
+      (create-tables db-conn)
+      (insert-entry-into-db db-conn feed-id entry)
+      (let [entries (load-entries-for-feed db-conn feed-id)]
+        (is (= ((first entries) :link) "https://localhost/item1"))))))
