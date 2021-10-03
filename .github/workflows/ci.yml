@@ -1,0 +1,14 @@
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ '**' ]
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    name: Linux tests
+    steps:
+      - uses: actions/checkout@v2
+      - run: sudo apt-get install -y leiningen
+      - run: lein test
