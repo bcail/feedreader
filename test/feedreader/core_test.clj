@@ -35,6 +35,20 @@
           feed-id 1
           entry {:title "title 1" :link "https://localhost/item1"}]
       (create-tables db-conn)
+      (insert-feed-into-db db-conn feed)
       (insert-entry-into-db db-conn feed-id entry)
       (let [entries (load-entries-for-feed db-conn feed-id)]
         (is (= ((first entries) :link) "https://localhost/item1"))))))
+
+(deftest test-db-dup-entry
+  (testing "insert duplicate entry"
+    (let [db-conn (get-db-conn ":memory:")
+          feed {:url "https://localhost/feed1"}
+          feed-id 1
+          entry {:title "title 1" :link "https://localhost/item1"}]
+      (create-tables db-conn)
+      (insert-feed-into-db db-conn feed)
+      (insert-entry-into-db db-conn feed-id entry)
+      (insert-entry-into-db db-conn feed-id entry)
+      (let [entries (load-entries-for-feed db-conn feed-id)]
+        (is (= (count entries) 1))))))

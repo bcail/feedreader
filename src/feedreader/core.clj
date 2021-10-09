@@ -4,7 +4,8 @@
   (:import (java.net.http HttpClient HttpRequest HttpResponse$BodyHandlers)
            (java.net URI)
            (java.sql DriverManager)
-           (java.util.regex Pattern))
+           (java.util.regex Pattern)
+           (org.sqlite SQLiteException))
   (:gen-class))
 
 (defn get-db-conn
@@ -15,7 +16,7 @@
   [db-conn]
   (let [statement (.createStatement db-conn)]
     (.executeUpdate statement "CREATE TABLE feeds (id INTEGER PRIMARY KEY, url TEXT, filter TEXT)")
-    (.executeUpdate statement "CREATE TABLE entries (id INTEGER PRIMARY KEY, feedid INTEGER, title TEXT, link TEXT)")))
+    (.executeUpdate statement "CREATE TABLE entries (id INTEGER PRIMARY KEY, feedid INTEGER, title TEXT, link TEXT, UNIQUE(feedid, title, link))")))
 
 (defn insert-feed-into-db
   [db-conn feed]
@@ -24,8 +25,14 @@
 
 (defn insert-entry-into-db
   [db-conn feed-id entry]
-  (let [statement (.createStatement db-conn)]
-    (.executeUpdate statement (str "INSERT INTO entries (feedid, title, link) VALUES (" feed-id ", \"" (get entry :title "") "\", \"" (entry :link) "\")"))))
+  (let [statement (.createStatement db-conn)
+        title (get entry :title "")
+        link (entry :link)
+        insert-stmt (str "INSERT INTO entries (feedid, title, link) VALUES (" feed-id ", \"" title "\", \"" link "\")")]
+    ;org.sqlite.SQLiteException:  [SQLITE_CONSTRAINT_UNIQUE]  A UNIQUE constraint failed]
+    (try
+      (.executeUpdate statement insert-stmt)
+      (catch SQLiteException e))))
 
 (defn load-feeds
   [db-conn]
@@ -35,7 +42,8 @@
       (if (not (.next results))
         feeds
         (recur (conj feeds
-                    {:url (.getString results "url")
+                    {:id (.getInt results "id")
+                     :url (.getString results "url")
                      :filter (Pattern/compile (.getString results "filter"))}))))))
 
 (defn load-entries-for-feed
@@ -74,10 +82,12 @@
     i))
 
 (defn process-feed
-  [feed]
+  [db-conn feed]
   (dorun
-    (for [i (filter-items (parse-feed (fetch-url (feed :url))) (feed :filter))]
-      (println (str (i :title) "\n  (" (i :link) ")")))))
+    (for [entry (filter-items (parse-feed (fetch-url (feed :url))) (feed :filter))]
+      (do
+       (insert-entry-into-db db-conn (feed :id) entry)
+       (println (str (entry :title) "\n  (" (entry :link) ")"))))))
 
 (defn run
   [db-conn]
@@ -85,7 +95,7 @@
     (for [feed (load-feeds db-conn)]
       (do
         (println (feed :url))
-        (process-feed feed)))))
+        (process-feed db-conn feed)))))
 
 (defn -main
   "Feed Reader"
