@@ -1,5 +1,6 @@
 (ns feedreader.core-test
   (:require [clojure.test :refer :all]
+            [clojure.java.io :as io]
             [feedreader.core :refer :all])
   (:import (java.sql DriverManager)))
 
@@ -8,13 +9,15 @@
 (deftest parse-feed-test
   (testing "parse-feed"
     ;https://www.rssboard.org/rss-specification
-    (let [parsed (parse-feed data)]
+    (let [data-input-stream (io/input-stream (.getBytes data))
+          parsed (parse-feed data-input-stream)]
       (is (= (first parsed) {:title  "Item 1 title", :link  "https://localhost/item1"}))
       (is (= (nth parsed 1) {:title  "Item 2 title", :link  "https://localhost/item2"})))))
 
 (deftest test-filter-feed
   (testing "filter-feed"
-    (let [parsed (parse-feed data)
+    (let [data-input-stream (io/input-stream (.getBytes data))
+          parsed (parse-feed data-input-stream)
           filtered (filter-items parsed #"item 1")]
       (is (= (count filtered) 1)))))
 
