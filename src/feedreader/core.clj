@@ -1,27 +1,30 @@
 (ns feedreader.core
   (:require [clojure.xml :as xml]
-            [clojure.java.io :as io])
+            [clojure.string :as string])
   (:import (java.net.http HttpClient HttpRequest HttpResponse$BodyHandlers)
            (java.net URI)
            (java.sql DriverManager)
            (java.util.regex Pattern)
-           (org.sqlite SQLiteException))
+           (java.time OffsetDateTime)
+           (java.time.format DateTimeFormatter)
+           (org.sqlite SQLiteException SQLiteConfig))
   (:gen-class))
 
 (defn get-db-conn
   [db-name]
-  (DriverManager/getConnection (str "jdbc:sqlite:" db-name)))
+  (let [config (doto (new SQLiteConfig) (.enforceForeignKeys true))]
+    (DriverManager/getConnection (str "jdbc:sqlite:" db-name) (.toProperties config))))
 
 (defn create-tables
   [db-conn]
   (let [statement (.createStatement db-conn)]
-    (.executeUpdate statement "CREATE TABLE feeds (id INTEGER PRIMARY KEY, url TEXT, filter TEXT)")
-    (.executeUpdate statement "CREATE TABLE entries (id INTEGER PRIMARY KEY, feedid INTEGER, title TEXT, link TEXT, UNIQUE(feedid, title, link))")))
+    (.executeUpdate statement "CREATE TABLE feeds (id INTEGER PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL, filter TEXT NULL, created TIMESTAMP NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), UNIQUE(url))")
+    (.executeUpdate statement "CREATE TABLE entries (id INTEGER PRIMARY KEY, feedid INTEGER NOT NULL, title TEXT NOT NULL, link TEXT NOT NULL, created TIMESTAMP NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), UNIQUE(feedid, title, link), FOREIGN KEY(feedid) REFERENCES feeds(id))")))
 
 (defn insert-feed-into-db
   [db-conn feed]
   (let [statement (.createStatement db-conn)]
-    (.executeUpdate statement (str "INSERT INTO feeds (url, filter) VALUES (\"" (feed :url) "\", \"" (get feed :filter "") "\")"))))
+    (.executeUpdate statement (str "INSERT INTO feeds (name, url, filter) VALUES (\"" (feed :name) "\", \"" (feed :url) "\", \"" (get feed :filter "") "\")"))))
 
 (defn insert-entry-into-db
   [db-conn feed-id entry]
@@ -29,10 +32,14 @@
         title (get entry :title "")
         link (entry :link)
         insert-stmt (str "INSERT INTO entries (feedid, title, link) VALUES (" feed-id ", \"" title "\", \"" link "\")")]
+    ;these entries might already be in the DB, so just ignore unique exceptions
     ;org.sqlite.SQLiteException:  [SQLITE_CONSTRAINT_UNIQUE]  A UNIQUE constraint failed]
     (try
       (.executeUpdate statement insert-stmt)
-      (catch SQLiteException e))))
+      (catch SQLiteException e
+        (let [exc-msg (.getMessage e)]
+          (if (not (string/starts-with? exc-msg "[SQLITE_CONSTRAINT_UNIQUE]"))
+            (throw e)))))))
 
 (defn load-feeds
   [db-conn]
@@ -43,8 +50,10 @@
         feeds
         (recur (conj feeds
                     {:id (.getInt results "id")
+                     :name (.getString results "name")
                      :url (.getString results "url")
-                     :filter (Pattern/compile (.getString results "filter"))}))))))
+                     :filter (Pattern/compile (.getString results "filter"))
+                     :created (OffsetDateTime/parse (.getString results "created") DateTimeFormatter/ISO_DATE_TIME)}))))))
 
 (defn load-entries-for-feed
   [db-conn feed-id]
