@@ -19,7 +19,7 @@
   [db-conn]
   (let [statement (.createStatement db-conn)]
     (.executeUpdate statement "CREATE TABLE feeds (id INTEGER PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL, filter TEXT NULL, created TIMESTAMP NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), UNIQUE(url))")
-    (.executeUpdate statement "CREATE TABLE entries (id INTEGER PRIMARY KEY, feedid INTEGER NOT NULL, title TEXT NOT NULL, link TEXT NOT NULL, created TIMESTAMP NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), UNIQUE(feedid, title, link), FOREIGN KEY(feedid) REFERENCES feeds(id))")))
+    (.executeUpdate statement "CREATE TABLE entries (id INTEGER PRIMARY KEY, feedid INTEGER NOT NULL, title TEXT NULL, description TEXT NULL, author TEXT NULL, guid TEXT NULL, link TEXT NULL, created TIMESTAMP NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), UNIQUE(feedid, title, link, guid), FOREIGN KEY(feedid) REFERENCES feeds(id))")))
 
 (defn insert-feed-into-db
   [db-conn feed]
@@ -30,8 +30,10 @@
   [db-conn feed-id entry]
   (let [statement (.createStatement db-conn)
         title (get entry :title "")
+        description (get entry :description "")
         link (entry :link)
-        insert-stmt (str "INSERT INTO entries (feedid, title, link) VALUES (" feed-id ", \"" title "\", \"" link "\")")]
+        guid (get entry :guid "")
+        insert-stmt (str "INSERT INTO entries (feedid, title, description, link, guid) VALUES (" feed-id ", \"" title "\", \"" description "\", \"" link "\", \"" guid "\")")]
     ;these entries might already be in the DB, so just ignore unique exceptions
     ;org.sqlite.SQLiteException:  [SQLITE_CONSTRAINT_UNIQUE]  A UNIQUE constraint failed]
     (try
