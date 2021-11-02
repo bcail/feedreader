@@ -34,7 +34,8 @@
             current-year (. (OffsetDateTime/now ZoneOffset/UTC) getYear)]
         (is (= (feed :url) "https://localhost/feed1"))
         (is (= (feed :name) "Feed 1"))
-        (is (= (. (feed :created) getYear) current-year))))))
+        (is (= (. (feed :created) getYear) current-year))
+        (is (= (. (feed :last-modified) getYear) current-year))))))
 
 (deftest test-db-entry
   (testing "insert and read entry from db"

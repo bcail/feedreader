@@ -18,8 +18,10 @@
 (defn create-tables
   [db-conn]
   (let [statement (.createStatement db-conn)]
-    (.executeUpdate statement "CREATE TABLE feeds (id INTEGER PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL, filter TEXT NULL, created TIMESTAMP NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), UNIQUE(url))")
-    (.executeUpdate statement "CREATE TABLE entries (id INTEGER PRIMARY KEY, feedid INTEGER NOT NULL, title TEXT NULL, description TEXT NULL, author TEXT NULL, guid TEXT NULL, link TEXT NULL, created TIMESTAMP NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), UNIQUE(feedid, title, link, guid), FOREIGN KEY(feedid) REFERENCES feeds(id))")))
+    (.executeUpdate statement "CREATE TABLE feeds (id INTEGER PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL, filter TEXT NULL, created TIMESTAMP NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), last_modified TIMESTAMP NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), UNIQUE(url))")
+    (.executeUpdate statement "CREATE TABLE entries (id INTEGER PRIMARY KEY, feedid INTEGER NOT NULL, title TEXT NULL, description TEXT NULL, author TEXT NULL, guid TEXT NULL, link TEXT NULL, created TIMESTAMP NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), last_modified TIMESTAMP NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')), UNIQUE(feedid, title, link, guid), FOREIGN KEY(feedid) REFERENCES feeds(id))")
+    (.executeUpdate statement "CREATE TRIGGER feed_last_modified UPDATE ON feeds BEGIN UPDATE feeds SET last_modified = (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) WHERE id = old.id; END;")
+    (.executeUpdate statement "CREATE TRIGGER entry_last_modified UPDATE ON entries BEGIN UPDATE entries SET last_modified = (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) WHERE id = old.id; END;")))
 
 (defn insert-feed-into-db
   [db-conn feed]
@@ -55,7 +57,8 @@
                      :name (.getString results "name")
                      :url (.getString results "url")
                      :filter (Pattern/compile (.getString results "filter"))
-                     :created (OffsetDateTime/parse (.getString results "created") DateTimeFormatter/ISO_DATE_TIME)}))))))
+                     :created (OffsetDateTime/parse (.getString results "created") DateTimeFormatter/ISO_DATE_TIME)
+                     :last-modified (OffsetDateTime/parse (.getString results "last_modified") DateTimeFormatter/ISO_DATE_TIME)}))))))
 
 (defn load-entries-for-feed
   [db-conn feed-id]
