@@ -40,9 +40,11 @@
     ;org.sqlite.SQLiteException:  [SQLITE_CONSTRAINT_UNIQUE]  A UNIQUE constraint failed]
     (try
       (.executeUpdate statement insert-stmt)
+      true
       (catch SQLiteException e
         (let [exc-msg (.getMessage e)]
-          (if (not (string/starts-with? exc-msg "[SQLITE_CONSTRAINT_UNIQUE]"))
+          (if (string/starts-with? exc-msg "[SQLITE_CONSTRAINT_UNIQUE]")
+            false
             (throw e)))))))
 
 (defn load-feeds
@@ -98,16 +100,16 @@
   [db-conn feed]
   (dorun
     (for [entry (filter-items (parse-feed (fetch-url (feed :url))) (feed :filter))]
-      (do
-       (insert-entry-into-db db-conn (feed :id) entry)
-       (println (str (entry :title) "\n  (" (entry :link) ")"))))))
+      (let [inserted (insert-entry-into-db db-conn (feed :id) entry)]
+        (if inserted
+          (println (str (entry :title) "\n  (" (entry :link) ")")))))))
 
 (defn run
   [db-conn]
   (dorun
     (for [feed (load-feeds db-conn)]
       (do
-        (println (feed :url))
+        (println (str "\n****\n" (feed :url) "\n"))
         (process-feed db-conn feed)))))
 
 (defn -main

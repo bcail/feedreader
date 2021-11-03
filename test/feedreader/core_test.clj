@@ -45,8 +45,9 @@
           entry {:title "title 1" :link "https://localhost/item1"}]
       (create-tables db-conn)
       (insert-feed-into-db db-conn feed)
-      (insert-entry-into-db db-conn feed-id entry)
-      (let [entries (load-entries-for-feed db-conn feed-id)]
+      (let [inserted (insert-entry-into-db db-conn feed-id entry)
+            entries (load-entries-for-feed db-conn feed-id)]
+        (is (= inserted true))
         (is (= ((first entries) :link) "https://localhost/item1"))))))
 
 (deftest test-db-entry-foreign-key
@@ -69,6 +70,7 @@
       (create-tables db-conn)
       (insert-feed-into-db db-conn feed)
       (insert-entry-into-db db-conn feed-id entry)
-      (insert-entry-into-db db-conn feed-id entry)
-      (let [entries (load-entries-for-feed db-conn feed-id)]
+      (let [inserted (insert-entry-into-db db-conn feed-id entry)
+            entries (load-entries-for-feed db-conn feed-id)]
+        (is (= inserted false))
         (is (= (count entries) 1))))))
