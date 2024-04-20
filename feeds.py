@@ -115,7 +115,7 @@ def fetch_feeds(db_name=DB_NAME):
             items = _parse_feed(data, feed_info)
             filtered_items = _filter_items(items, feed['filter'])
             if filtered_items:
-                print(f'\n***** {feed_info}')
+                items_to_print = []
                 for item in filtered_items:
                     id_ = _insert_item(conn, item, feed['id'])
                     if id_:
@@ -124,7 +124,10 @@ def fetch_feeds(db_name=DB_NAME):
                             description = item["link"]
                         elif 'id' in item:
                             description = item["id"]
-                        print(f'{id_} - {item["title"]}\n  ({description})')
+                        items_to_print.append(f'{id_} - {item["title"]}\n  ({description})')
+                if items_to_print:
+                    print(f'\n***** {feed_info}')
+                    print('\n'.join(items_to_print))
 
 
 cmds = {}
