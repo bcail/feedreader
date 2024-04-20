@@ -1,5 +1,6 @@
 import re
 import sqlite3
+import sys
 import urllib.request
 import xml.etree.ElementTree as ET
 from xml.etree.ElementTree import ParseError
@@ -27,12 +28,12 @@ def _get_feeds(conn):
     return feeds
 
 
-def _parse_feed(data):
+def _parse_feed(data, feed_info):
     items = []
     try:
         tree = ET.fromstring(data)
     except ParseError as e:
-        print(f'  error parsing feed: {e}')
+        print(f'{feed_info} -- error parsing feed: {e}')
         return []
     if tree.tag == 'rss':
         # tree[0] is <channel>
@@ -55,7 +56,7 @@ def _parse_feed(data):
                         info['id'] = entry_child.text
                 items.append(info)
     else:
-        print(f'  can\'t parse {tree.tag}')
+        print(f'{feed_info} -- can\'t parse {tree.tag}')
     return items
 
 
@@ -91,7 +92,7 @@ request_headers = {
 }
 
 
-def _fetch_feed(url):
+def _fetch_feed(url, feed_info):
     req = urllib.request.Request(url, headers=request_headers.copy())
     try:
         response = urllib.request.urlopen(req)
@@ -99,31 +100,83 @@ def _fetch_feed(url):
             data = response.read()
             return data
         else:
-            print(f'  error: {response.status}')
+            print(f'{feed_info} error: {response.status}')
     except Exception as e:
-        print(f'  {e}')
+        print(f'{feed_info} error: {e}')
 
 
-def run(db_name=DB_NAME):
+def fetch_feeds(db_name=DB_NAME):
     conn = _get_db_connection(db_name)
     feeds = _get_feeds(conn)
     for feed in feeds:
-        print(f'\n***** {feed["name"]} -- {feed["url"]}')
-        data = _fetch_feed(feed['url'])
+        feed_info = f'{feed["name"]} -- {feed["url"]}'
+        data = _fetch_feed(feed['url'], feed_info)
         if data:
-            items = _parse_feed(data)
+            items = _parse_feed(data, feed_info)
             filtered_items = _filter_items(items, feed['filter'])
-            for item in filtered_items:
-                id_ = _insert_item(conn, item, feed['id'])
-                if id_:
-                    description = ''
-                    if 'link' in item:
-                        description = item["link"]
-                    elif 'id' in item:
-                        description = item["id"]
-                    print(f'{id_} - {item["title"]}\n  ({description})')
+            if filtered_items:
+                print(f'\n***** {feed_info}')
+                for item in filtered_items:
+                    id_ = _insert_item(conn, item, feed['id'])
+                    if id_:
+                        description = ''
+                        if 'link' in item:
+                            description = item["link"]
+                        elif 'id' in item:
+                            description = item["id"]
+                        print(f'{id_} - {item["title"]}\n  ({description})')
+
+
+cmds = {}
+
+
+def _print_help(cmds):
+    help_msg = 'h - help'
+    for cmd, info in cmds.items():
+        help_msg += f'\n{cmd} - {info["description"]}'
+    help_msg += '\nq (or Ctrl-d) - quit'
+    print(help_msg.strip())
+
+
+def _command_loop(cmds):
+    while True:
+        cmd = input('>>> ')
+        if cmd == 'h':
+            _print_help(cmds)
+        elif cmd == 'q':
+            raise EOFError()
+        elif cmd in cmds:
+            cmds[cmd]['function']()
+        else:
+            print('Invalid command: "%s"' % cmd)
+
+
+def run():
+    _print_help(cmds)
+    try:
+        _command_loop(cmds)
+    except (EOFError, KeyboardInterrupt):
+        sys.exit(0)
+    except:
+        import traceback
+        print(traceback.format_exc())
+        sys.exit(1)
+
+
+def parse_args():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-f', '--fetch', action='store_true', dest='fetch')
+    args = parser.parse_args()
+    return args
 
 
 if __name__ == '__main__':
     print('Welcome to Feed Reader')
-    run()
+
+    args = parse_args()
+
+    if args.fetch:
+        fetch_feeds()
+    else:
+        run()
