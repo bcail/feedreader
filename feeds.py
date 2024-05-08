@@ -130,7 +130,17 @@ def fetch_feeds(db_name=DB_NAME):
                     print('\n'.join(items_to_print))
 
 
-cmds = {}
+def _list_feeds(db_name=DB_NAME):
+    conn = _get_db_connection(db_name)
+    feeds = _get_feeds(conn)
+    for f in feeds:
+        feed_info = f'{f["id"]} -- {f["name"]} -- {f["url"]}'
+        print(feed_info)
+
+
+cmds = {
+    'f': {'description': 'list feeds', 'function': _list_feeds},
+}
 
 
 def _print_help(cmds):
