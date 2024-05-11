@@ -138,8 +138,17 @@ def _list_feeds(db_name=DB_NAME):
         print(feed_info)
 
 
+def _list_entries(db_name=DB_NAME):
+    conn = _get_db_connection(db_name)
+    print('Recent entries:')
+    entries = conn.execute('SELECT title,link FROM entries ORDER BY created DESC LIMIT 20').fetchall()
+    for e in entries:
+        print(f'{e[0]} -- {e[1]}')
+
+
 cmds = {
     'f': {'description': 'list feeds', 'function': _list_feeds},
+    'e': {'description': 'list entries', 'function': _list_entries},
 }
 
 
