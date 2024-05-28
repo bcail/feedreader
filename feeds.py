@@ -43,6 +43,8 @@ def _parse_feed(data, feed_info):
                 for item_child in child:
                     if item_child.tag in ['title', 'link']:
                         info[item_child.tag] = item_child.text
+                    elif item_child.tag == 'enclosure':
+                        info['enclosure_url'] = item_child.attrib['url']
                 items.append(info)
     #atom
     elif tree.tag == '{http://www.w3.org/2005/Atom}feed':
@@ -74,10 +76,10 @@ def _filter_items(items, pattern):
 def _insert_item(conn, item, feedid):
     #db is unique across feedid, title, link, & guid - need to use '' for those, instead of null,
     #   so unique works
-    values = (feedid, item['title'], None, item.get('link', ''), item.get('id', ''))
+    values = (feedid, item['title'], None, item.get('link', ''), item.get('id', ''), item.get('enclosure_url', ''))
     try:
         cur = conn.cursor()
-        cur.execute('INSERT INTO entries(feedid, title, description, link, guid) VALUES(?, ?, ?, ?, ?)', values)
+        cur.execute('INSERT INTO entries(feedid, title, description, link, guid, enclosure_url) VALUES(?, ?, ?, ?, ?, ?)', values)
         id_ = cur.lastrowid
         conn.commit()
         return id_
@@ -92,7 +94,9 @@ request_headers = {
 }
 
 
-def _fetch_feed(url, feed_info):
+def _fetch_feed(url, feed_info=None):
+    if not feed_info:
+        feed_info = url
     req = urllib.request.Request(url, headers=request_headers.copy())
     try:
         response = urllib.request.urlopen(req)
@@ -141,9 +145,12 @@ def _list_feeds(db_name=DB_NAME):
 def _list_entries(db_name=DB_NAME):
     conn = _get_db_connection(db_name)
     print('Recent entries:')
-    entries = conn.execute('SELECT title,link FROM entries ORDER BY created DESC LIMIT 20').fetchall()
+    entries = conn.execute('SELECT title,link,enclosure_url FROM entries ORDER BY created DESC LIMIT 20').fetchall()
     for e in entries:
-        print(f'{e[0]} -- {e[1]}')
+        info = f'{e[0]} -- {e[1]}'
+        if e[2]:
+            info += f' -- {e[2]}'
+        print(info)
 
 
 cmds = {
