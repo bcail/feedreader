@@ -1,3 +1,4 @@
+import datetime
 import re
 import sqlite3
 import sys
@@ -8,13 +9,72 @@ from xml.etree.ElementTree import ParseError
 
 DB_NAME = 'feedreader.db'
 
+DB_INIT_STATEMENTS = [
+    'CREATE TABLE feeds ('
+        'id INTEGER PRIMARY KEY,'
+        'url TEXT NOT NULL,'
+        'name TEXT NOT NULL,'
+        'filter TEXT NULL,'
+        'inactive INTEGER NOT NULL DEFAULT 0,'
+        'created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,'
+        'updated TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,'
+        'CHECK (inactive = 0 OR inactive = 1),'
+        'UNIQUE(url)) STRICT',
+    'CREATE TABLE entries ('
+        'id INTEGER PRIMARY KEY,'
+        'feedid INTEGER NOT NULL,'
+        'url TEXT NOT NULL,'
+        'external_id TEXT NOT NULL,'
+        'title TEXT NOT NULL,'
+        'date TEXT NULL,'
+        'date_string TEXT NULL,'
+        'description TEXT NOT NULL DEFAULT "",'
+        'author TEXT NOT NULL DEFAULT "",'
+        'enclosure_url TEXT NOT NULL DEFAULT "",'
+        'created TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,'
+        'updated TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,'
+        'UNIQUE(feedid, url, external_id, title),'
+        'CHECK (date IS NULL OR date IS strftime("%Y-%m-%d %H:%M:%S", date)),'
+        'FOREIGN KEY(feedid) REFERENCES feeds(id)) STRICT',
+    'CREATE TRIGGER feed_updated UPDATE ON feeds BEGIN UPDATE feeds SET updated = CURRENT_TIMESTAMP WHERE id = old.id; END;',
+    'CREATE TRIGGER entry_updated UPDATE ON entries BEGIN UPDATE entries SET updated = CURRENT_TIMESTAMP WHERE id = old.id; END;',
+]
+
 
 def _get_db_connection(db_name):
-    return sqlite3.connect(db_name)
+    conn = sqlite3.connect(db_name, isolation_level=None)
+    conn.execute('PRAGMA foreign_keys = ON;')
+    return conn
+
+
+def begin_txn(cursor):
+    cursor.execute('BEGIN IMMEDIATE')
+
+
+def rollback(cursor):
+    try:
+        cursor.execute('ROLLBACK')
+    except sqlite3.OperationalError as e:
+        if str(e) == 'cannot rollback - no transaction is active':
+            pass
+        else:
+            raise
+
+
+def create_tables(conn):
+    cursor = conn.cursor()
+    begin_txn(cursor)
+    try:
+        for statement in DB_INIT_STATEMENTS:
+            cursor.execute(statement)
+        cursor.execute('COMMIT')
+    except:
+        rollback(cursor)
+        raise
 
 
 def _get_feeds(conn):
-    query = 'SELECT id,name,url,filter,inactive FROM feeds'
+    query = 'SELECT id,name,url,filter,inactive FROM feeds ORDER BY id'
     feed_records = conn.execute(query).fetchall()
     feeds = []
     for r in [f for f in feed_records if not f[4]]:
@@ -28,6 +88,15 @@ def _get_feeds(conn):
     return feeds
 
 
+def _get_date(d):
+    for format_ in ['%a, %d %b %Y %H:%M:%S %z', '%Y-%m-%dT%H:%M:%S%z', '%Y-%m-%d %H:%M:%S%z', '%Y-%m-%dT%H:%M:%S.%f%z',
+                    '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%SZ', '%Y-%m-%d %H:%M:%S', '%a, %d %b %Y %H:%M:%S GMT']:
+        try:
+            return datetime.datetime.strptime(d, format_)
+        except ValueError:
+            pass
+
+
 def _parse_feed(data, feed_info):
     items = []
     try:
@@ -35,18 +104,29 @@ def _parse_feed(data, feed_info):
     except ParseError as e:
         print(f'{feed_info} -- error parsing feed: {e}')
         return []
+    #rss - https://www.rssboard.org/rss-specification
     if tree.tag == 'rss':
         # tree[0] is <channel>
         for child in tree[0]:
             if child.tag == 'item':
                 info = {}
                 for item_child in child:
-                    if item_child.tag in ['title', 'link']:
-                        info[item_child.tag] = item_child.text
+                    if item_child.tag == 'title':
+                        info['title'] = item_child.text
+                    elif item_child.tag == 'link':
+                        info['url'] = item_child.text
+                    elif item_child.tag == 'guid':
+                        info['external_id'] = item_child.text
                     elif item_child.tag == 'enclosure':
                         info['enclosure_url'] = item_child.attrib['url']
+                    elif item_child.tag == 'pubDate':
+                        pub_date = _get_date(item_child.text)
+                        if pub_date:
+                            info['date'] = pub_date
+                        else:
+                            info['date_string'] = item_child.text
                 items.append(info)
-    #atom
+    #atom - https://validator.w3.org/feed/docs/atom.html
     elif tree.tag == '{http://www.w3.org/2005/Atom}feed':
         for child in tree:
             if child.tag == '{http://www.w3.org/2005/Atom}entry':
@@ -54,8 +134,21 @@ def _parse_feed(data, feed_info):
                 for entry_child in child:
                     if entry_child.tag == '{http://www.w3.org/2005/Atom}title':
                         info['title'] = entry_child.text
+                    if entry_child.tag == '{http://www.w3.org/2005/Atom}link':
+                        rel = entry_child.attrib.get('rel', 'alternate')
+                        if rel == 'alternate':
+                            info['url'] = entry_child.attrib['href']
+                        elif rel == 'enclosure':
+                            info['enclosure_url'] = entry_child.attrib['href']
                     if entry_child.tag == '{http://www.w3.org/2005/Atom}id':
-                        info['id'] = entry_child.text
+                        info['external_id'] = entry_child.text
+                    if entry_child.tag == '{http://www.w3.org/2005/Atom}updated':
+                        # eg. 2024-05-29T00:00:00-04:00
+                        updated = _get_date(entry_child.text)
+                        if updated:
+                            info['date'] = updated
+                        else:
+                            info['date_string'] = entry_child.text
                 items.append(info)
     else:
         print(f'{feed_info} -- can\'t parse {tree.tag}')
@@ -73,17 +166,41 @@ def _filter_items(items, pattern):
     return filtered
 
 
-def _insert_item(conn, item, feedid):
-    #db is unique across feedid, title, link, & guid - need to use '' for those, instead of null,
-    #   so unique works
-    values = (feedid, item['title'], None, item.get('link', ''), item.get('id', ''), item.get('enclosure_url', ''))
+def _insert_feed(conn, feed):
+    values = [feed['name'], feed['url'], feed['filter']]
+    if feed['inactive']:
+        values.append(1)
+    else:
+        values.append(0)
+    cur = conn.cursor()
+    begin_txn(cur)
     try:
-        cur = conn.cursor()
-        cur.execute('INSERT INTO entries(feedid, title, description, link, guid, enclosure_url) VALUES(?, ?, ?, ?, ?, ?)', values)
+        cur.execute('INSERT INTO feeds(name, url, filter, inactive) VALUES(?, ?, ?, ?)', values)
         id_ = cur.lastrowid
-        conn.commit()
+        cur.execute('COMMIT')
         return id_
-    except sqlite3.IntegrityError as e:
+    except:
+        rollback(cur)
+        raise
+
+
+def _insert_item(conn, item, feedid):
+    #db is unique across feedid, title, link, & external_id - need to use '' for those, instead of null,
+    #   so unique works
+    dt = item.get('date')
+    if dt:
+        dt = dt.strftime('%Y-%m-%d %H:%M:%S')
+    values = (feedid, item['title'] or '', item.get('url') or '', item.get('external_id') or '', item.get('enclosure_url', ''),
+              dt, item.get('date_string'))
+    cur = conn.cursor()
+    begin_txn(cur)
+    try:
+        cur.execute('INSERT INTO entries(feedid, title, url, external_id, enclosure_url, date, date_string) VALUES(?, ?, ?, ?, ?, ?, ?)', values)
+        id_ = cur.lastrowid
+        cur.execute('COMMIT')
+        return id_
+    except Exception as e:
+        rollback(cur)
         if 'UNIQUE constraint failed' in str(e):
             return
         raise
@@ -124,11 +241,13 @@ def fetch_feeds(db_name=DB_NAME):
                     id_ = _insert_item(conn, item, feed['id'])
                     if id_:
                         description = ''
-                        if 'link' in item:
-                            description = item["link"]
+                        if 'url' in item:
+                            description = item["url"]
                         elif 'id' in item:
                             description = item["id"]
-                        items_to_print.append(f'{id_} - {item["title"]}\n  ({description})')
+                        if 'enclosure_url' in item:
+                            description += f' ({item["enclosure_url"]})'
+                        items_to_print.append(f'{id_} - {item["title"]}\n  {description}')
                 if items_to_print:
                     print(f'\n***** {feed_info}')
                     print('\n'.join(items_to_print))
@@ -144,13 +263,23 @@ def _list_feeds(db_name=DB_NAME):
 
 def _list_entries(db_name=DB_NAME):
     conn = _get_db_connection(db_name)
-    print('Recent entries:')
-    entries = conn.execute('SELECT title,link,enclosure_url FROM entries ORDER BY created DESC LIMIT 20').fetchall()
-    for e in entries:
-        info = f'{e[0]} -- {e[1]}'
-        if e[2]:
-            info += f' -- {e[2]}'
-        print(info)
+    feeds = _get_feeds(conn)
+    for f in feeds:
+        print(f'\n*** {f["name"]} ***\n')
+        entries = conn.execute('SELECT date,title,url,enclosure_url,date_string FROM entries WHERE feedid = ? ORDER BY date DESC LIMIT 5', (f['id'],)).fetchall()
+        for e in entries:
+            if e[0]:
+                d = e[0].split()[0]
+                info = f'{d} -- {e[1]}'
+            else:
+                info = e[1]
+            if e[2]:
+                info += f'\n  -- {e[2]}'
+            if e[3]:
+                info += f'  -- {e[3]}'
+            elif e[4]:
+                info += f'  -- {e[4]}'
+            print(info)
 
 
 cmds = {
