@@ -160,12 +160,13 @@ def _filter_items(items, pattern):
     return filtered
 
 
-def _insert_feed(conn, feed):
-    values = [feed['name'], feed['url'], feed['filter']]
-    if feed['inactive']:
+def insert_feed(feed):
+    values = [feed['name'], feed['url'], feed.get('filter')]
+    if feed.get('inactive'):
         values.append(1)
     else:
         values.append(0)
+    conn = _get_db_connection(DB_NAME)
     cur = conn.cursor()
     with sqlite_txn(cur):
         cur.execute('INSERT INTO feeds(name, url, filter, inactive) VALUES(?, ?, ?, ?)', values)
