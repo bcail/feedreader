@@ -227,6 +227,12 @@ def _fetch_feed(url, feed_info=None):
         print(f'{feed_info} error: {e}')
 
 
+def _url_is_image(url):
+    url = url.lower()
+    if url.endswith('jpg') or url.endswith('png'):
+        return True
+
+
 def fetch_feeds(db_name=DB_NAME):
     conn = _get_db_connection(db_name)
     feeds = _get_feeds(conn)
@@ -247,7 +253,8 @@ def fetch_feeds(db_name=DB_NAME):
                         elif 'id' in item:
                             description = item["id"]
                         if 'enclosure_url' in item:
-                            description += f' ({item["enclosure_url"]})'
+                            if not _url_is_image(item['enclosure_url']):
+                                description += f' ({item["enclosure_url"]})'
                         items_to_print.append(f'{id_} - {item["title"]}\n  {description}')
                 if items_to_print:
                     print(f'\n***** {feed_info}')
@@ -276,7 +283,7 @@ def _list_entries(db_name=DB_NAME):
                 info = e[1]
             if e[2]:
                 info += f'\n  -- {e[2]}'
-            if e[3]:
+            if e[3] and not _url_is_image(e[3]):
                 info += f'  -- {e[3]}'
             elif e[4]:
                 info += f'  -- {e[4]}'
