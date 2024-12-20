@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from contextlib import contextmanager
 import datetime
 import re
 import sqlite3
@@ -42,36 +43,28 @@ DB_INIT_STATEMENTS = [
 ]
 
 
+@contextmanager
+def sqlite_txn(cursor):
+    cursor.execute('BEGIN IMMEDIATE')
+    try:
+        yield
+        cursor.execute('COMMIT')
+    except BaseException as e:
+        cursor.execute('ROLLBACK')
+        raise
+
+
 def _get_db_connection(db_name):
     conn = sqlite3.connect(db_name, isolation_level=None)
     conn.execute('PRAGMA foreign_keys = ON;')
     return conn
 
 
-def begin_txn(cursor):
-    cursor.execute('BEGIN IMMEDIATE')
-
-
-def rollback(cursor):
-    try:
-        cursor.execute('ROLLBACK')
-    except sqlite3.OperationalError as e:
-        if str(e) == 'cannot rollback - no transaction is active':
-            pass
-        else:
-            raise
-
-
 def create_tables(conn):
     cursor = conn.cursor()
-    begin_txn(cursor)
-    try:
+    with sqlite_txn(cursor):
         for statement in DB_INIT_STATEMENTS:
             cursor.execute(statement)
-        cursor.execute('COMMIT')
-    except:
-        rollback(cursor)
-        raise
 
 
 def _get_feeds(conn):
@@ -174,15 +167,10 @@ def _insert_feed(conn, feed):
     else:
         values.append(0)
     cur = conn.cursor()
-    begin_txn(cur)
-    try:
+    with sqlite_txn(cur):
         cur.execute('INSERT INTO feeds(name, url, filter, inactive) VALUES(?, ?, ?, ?)', values)
         id_ = cur.lastrowid
-        cur.execute('COMMIT')
         return id_
-    except:
-        rollback(cur)
-        raise
 
 
 def _insert_item(conn, item, feedid):
@@ -194,14 +182,12 @@ def _insert_item(conn, item, feedid):
     values = (feedid, item['title'] or '', item.get('url') or '', item.get('external_id') or '', item.get('enclosure_url', ''),
               dt, item.get('date_string'))
     cur = conn.cursor()
-    begin_txn(cur)
     try:
-        cur.execute('INSERT INTO entries(feedid, title, url, external_id, enclosure_url, date, date_string) VALUES(?, ?, ?, ?, ?, ?, ?)', values)
-        id_ = cur.lastrowid
-        cur.execute('COMMIT')
-        return id_
+        with sqlite_txn(cur):
+            cur.execute('INSERT INTO entries(feedid, title, url, external_id, enclosure_url, date, date_string) VALUES(?, ?, ?, ?, ?, ?, ?)', values)
+            id_ = cur.lastrowid
+            return id_
     except Exception as e:
-        rollback(cur)
         if 'UNIQUE constraint failed' in str(e):
             return
         raise
