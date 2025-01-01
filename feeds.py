@@ -246,6 +246,8 @@ def fetch_feeds(db_name=DB_NAME):
                 if items_to_print:
                     print(f'\n***** {feed_info}')
                     print('\n'.join(items_to_print))
+                else:
+                    print('.', end='')
 
 
 def _list_feeds(db_name=DB_NAME):
