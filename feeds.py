@@ -175,13 +175,13 @@ def insert_feed(feed, conn=None):
         return id_
 
 
-def _insert_item(conn, item, feedid):
+def insert_item(conn, item, feedid):
     #db is unique across feedid, title, link, & external_id - need to use '' for those, instead of null,
     #   so unique works
     dt = item.get('date')
     if dt:
         dt = dt.strftime('%Y-%m-%d %H:%M:%S')
-    values = (feedid, item['title'] or '', item.get('url') or '', item.get('external_id') or '', item.get('enclosure_url', ''),
+    values = (feedid, item.get('title') or '', item.get('url') or '', item.get('external_id') or '', item.get('enclosure_url', ''),
               dt, item.get('date_string'))
     cur = conn.cursor()
     try:
@@ -233,7 +233,7 @@ def fetch_feeds(db_name=DB_NAME):
             if filtered_items:
                 items_to_print = []
                 for item in filtered_items:
-                    id_ = _insert_item(conn, item, feed['id'])
+                    id_ = insert_item(conn, item, feed['id'])
                     if id_:
                         description = ''
                         if 'url' in item:
