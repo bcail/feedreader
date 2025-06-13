@@ -39,6 +39,17 @@ class Tests(unittest.TestCase):
 
         self.assertEqual(results, [(1, 'Test Title', 'http://localhost')])
 
+    def test_get_entry_display(self):
+        feed_id = feeds.insert_feed({'name': 'Test Feed', 'url': 'http://localhost'}, conn=self.conn)
+
+        entry_id = feeds.insert_item(self.conn, {'title': 'Test Title', 'url': 'http://localhost'}, feed_id)
+
+        display = feeds._get_entry_display(entry_id, conn=self.conn)
+
+        expected = 'Test Title\n  -- http://localhost'
+
+        self.assertEqual(display, expected)
+
 
 if __name__ == '__main__':
     with tempfile.TemporaryDirectory() as tmp:

@@ -235,15 +235,7 @@ def fetch_feeds(db_name=DB_NAME):
                 for item in filtered_items:
                     id_ = insert_item(conn, item, feed['id'])
                     if id_:
-                        description = ''
-                        if 'url' in item:
-                            description = item["url"]
-                        elif 'id' in item:
-                            description = item["id"]
-                        if 'enclosure_url' in item:
-                            if not _url_is_image(item['enclosure_url']):
-                                description += f' ({item["enclosure_url"]})'
-                        items_to_print.append(f'{id_} - {item["title"]}\n  {description}')
+                        items_to_print.append(_get_entry_display(id_))
                 if items_to_print:
                     print(f'\n***** {feed_info}')
                     print('\n'.join(items_to_print))
@@ -259,25 +251,39 @@ def _list_feeds(db_name=DB_NAME):
         print(feed_info)
 
 
+def _get_entry_display(entry_id, conn=None):
+    if not conn:
+        conn = _get_db_connection(DB_NAME)
+
+    e = conn.execute('SELECT date,title,url,enclosure_url,date_string FROM entries WHERE id = ?', (entry_id,)).fetchone()
+
+    if e[0]:
+        d = e[0].split()[0]
+        info = f'{d} -- {e[1]}'
+    else:
+        info = e[1]
+
+    # url
+    if e[2]:
+        info += f'\n  -- {e[2]}'
+    # enclosure_url
+    if e[3] and not _url_is_image(e[3]):
+        info += f'\n  -- {e[3]}'
+    # date_string
+    elif e[4]:
+        info += f'\n  -- {e[4]}'
+
+    return info
+
+
 def _list_entries(db_name=DB_NAME):
     conn = _get_db_connection(db_name)
     feeds = _get_feeds(conn)
     for f in feeds:
         print(f'\n*** {f["name"]} ***\n')
-        entries = conn.execute('SELECT date,title,url,enclosure_url,date_string FROM entries WHERE feedid = ? ORDER BY date DESC LIMIT 5', (f['id'],)).fetchall()
-        for e in entries:
-            if e[0]:
-                d = e[0].split()[0]
-                info = f'{d} -- {e[1]}'
-            else:
-                info = e[1]
-            if e[2]:
-                info += f'\n  -- {e[2]}'
-            if e[3] and not _url_is_image(e[3]):
-                info += f'  -- {e[3]}'
-            elif e[4]:
-                info += f'  -- {e[4]}'
-            print(info)
+        entry_id_results = conn.execute('SELECT id FROM entries WHERE feedid = ? ORDER BY date DESC LIMIT 5', (f['id'],)).fetchall()
+        for entry_id_result in entry_id_results:
+            print(_get_entry_display(entry_id_result[0]))
 
 
 cmds = {
